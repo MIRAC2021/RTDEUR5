@@ -1,0 +1,71 @@
+def before_start():
+    pop("Run the client", title="Starting Script", blocking=True)
+    sleep(0.1)
+    rtde_set_watchdog("input_int_register_0", 10, "PAUSE")
+    write_integer_output_register(0,1)
+end
+
+global tcp_pose = p[0., 0., 0., 0., 0., 0.]
+global joint_pose = [0., 0., 0., 0., 0., 0.]
+global current_pose = get_actual_tcp_pose()
+global current_joints = get_actual_joint_positions()
+before_start()
+global mode = 0
+global pose_rcvd = False
+# global message = "idle"
+
+thread receive_command():
+    textmsg("receiving command)
+    # include p or do not include p depending on the command being used. In this case, we are using movec
+    # Example moveC command: movec(p[x,y,z,0,0,0], pose_to, a=1.2, v=0.25, r=0.05, mode=1)
+    target_tcp_pose = p[
+        read_input_float_register(0),
+        read_input_float_register(1),
+        read_input_float_register(2),
+        read_input_float_register(3),
+        read_input_float_register(4),
+        read_input_float_register(5),
+    ]
+
+    mode = read_input_integer_register(1)
+    pose_rcvd = read_input_boolean_register(65)
+    sync()
+end
+
+run receive_command()
+
+def do_move(mode, target_tcp_pose):
+    textmsg("Starting the move")
+    # should i make move mode dependent or the wother way around?
+    if mode == 1:
+        # movec(p[x,y,z,0,0,0], pose_to, a=1.2, v=0.25, r=0.05, mode=1)
+        #movec(target_tcp_pose)
+        # once move is complete, set mode to "idle"
+        # when (current_pose == tcp_pose)
+
+        while (current_pose != tcp_pose)
+            movec(target_tcp_pose)
+        end
+        textmsg("move completed)
+        # input_int_register_0 = 0
+    end
+end
+
+sync()
+while True:
+    textmsg("Hewo")
+    watchdog_check = read_input_integer_register(0)
+    textmsg("Value of watchdog check: ", watchdog_check)
+    textmsg("Current tcp pose is: ", tcp_pose)
+    if (watchdog_check == 1):
+        run receive_command()
+        textmsg("Value of mode is: ", mode)
+        textmsg("value of tcp_pose is: ", tcp_pose)
+        textmsg("target tcp pose is: ", target_tcp_pose)
+        do_move(mode, target_tcp_pose)
+        sync()
+        sleep(1)
+    else:
+        popup("Watchdog is not active", title = "Check Watchdog", blocking = True)
+    end
+end
