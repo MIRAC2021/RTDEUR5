@@ -45,7 +45,7 @@ class RTDE_Node(Node):
         self.con_lock = threading.Lock()
 
 
-    def transform(msg):
+    def transform(msg): # can be redone as long as you return a 2d list from the ros message
         rows = msg.layout.dim[0].size if msg.layout.dim else 0
         cols = msg.layout.dim[1].size if len(msg.layout.dim) > 1 else 6
 
@@ -75,19 +75,20 @@ class RTDE_Node(Node):
                 for setp_list in path:
                     move_completed = True
 
-                    if move_completed and state.output_int_register_0 == 1:
-                        move_completed = False
-                        #new_setp = setp1 if RTDE_Node.setp_to_list(setp) == setp2 else setp2
-                        RTDE_Node.list_to_setp(self.setp, setp_list)
-                        print("New pose = " + str(self.setp))
-                        # send new setpoint
-                        self.con.send(self.setp)
-                        self.watchdog.input_int_register_0 = 1
-
-                    elif not move_completed and state.output_int_register_0 == 0:
-                        print("Move to confirmed pose = " + str(state.target_q))
-                        move_completed = True
-                        self.watchdog.input_int_register_0 = 0
+                    while True:
+                        if move_completed and state.output_int_register_0 == 1:
+                            move_completed = False
+                            #new_setp = setp1 if RTDE_Node.setp_to_list(setp) == setp2 else setp2
+                            RTDE_Node.list_to_setp(self.setp, setp_list)
+                            print("New pose = " + str(self.setp))
+                            # send new setpoint
+                            self.con.send(self.setp)
+                            self.watchdog.input_int_register_0 = 1
+                        elif not move_completed and state.output_int_register_0 == 0:
+                            print("Move to confirmed pose = " + str(state.target_q))
+                            move_completed = True
+                            self.watchdog.input_int_register_0 = 0
+                            break
 
     def setp_to_list(sp):
         sp_list = []
