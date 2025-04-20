@@ -45,12 +45,26 @@ class RTDE_Node(Node):
         self.con = rtde.RTDE(ROBOT_HOST, ROBOT_PORT)
         self.con_lock = threading.Lock()
 
+    def transform(msg):
+        rows = msg.layout.dim[0].size if msg.layout.dim else 0
+        cols = msg.layout.dim[1].size if len(msg.layout.dim) > 1 else 6
+
+        if rows * cols != len(msg.data):
+            print('Layout size does not match data length!')
+            return None
+
+        return [msg.data[i:i+cols] for i in range(0, len(msg.data), cols)]
+
     def ros_message_callback(self, msg):
         # a custom message would be a whole lot better...
         with self.ros_lock: # this one is probably overkill, but i'm paranoid :)
             with self.con_lock:
                 move_completed = True
                 state = self.con.receive()
+
+                path = RTDE_Node.transform(msg)
+                if path is None:
+                    return
 
                 if state is None:
                     # this probably doesn't work since it is in a thread, so... find a better way
