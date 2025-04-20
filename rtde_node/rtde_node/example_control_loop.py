@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 
 import sys
-
 import std_msgs.msg
 
-sys.path.append("..")
-import logging
+sys.path.append(".")
 
+import logging
 import rtde.rtde as rtde
 import rtde.rtde_config as rtde_config
 import threading
@@ -45,6 +44,7 @@ class RTDE_Node(Node):
         self.con = rtde.RTDE(ROBOT_HOST, ROBOT_PORT)
         self.con_lock = threading.Lock()
 
+
     def transform(msg):
         rows = msg.layout.dim[0].size if msg.layout.dim else 0
         cols = msg.layout.dim[1].size if len(msg.layout.dim) > 1 else 6
@@ -57,31 +57,37 @@ class RTDE_Node(Node):
 
     def ros_message_callback(self, msg):
         # a custom message would be a whole lot better...
+        if not self.running: # don't process messages early
+            return
+
         with self.ros_lock: # this one is probably overkill, but i'm paranoid :)
+            path = RTDE_Node.transform(msg)
             with self.con_lock:
-                move_completed = True
                 state = self.con.receive()
 
-                path = RTDE_Node.transform(msg)
                 if path is None:
-                    return
+                    sys.exit()
 
                 if state is None:
                     # this probably doesn't work since it is in a thread, so... find a better way
                     sys.exit()
 
-                if move_completed and state.output_int_register_0 == 1:
-                    move_completed = False
-                    new_setp = setp1 if RTDE_Node.setp_to_list(setp) == setp2 else setp2
-                    RTDE_Node.list_to_setp(setp, new_setp)
-                    print("New pose = " + str(new_setp))
-                    # send new setpoint
-                    self.con.send(setp)
-                    self.watchdog.input_int_register_0 = 1
-                elif not move_completed and state.output_int_register_0 == 0:
-                    print("Move to confirmed pose = " + str(state.target_q))
+                for setp_list in path:
                     move_completed = True
-                    self.watchdog.input_int_register_0 = 0
+
+                    if move_completed and state.output_int_register_0 == 1:
+                        move_completed = False
+                        #new_setp = setp1 if RTDE_Node.setp_to_list(setp) == setp2 else setp2
+                        RTDE_Node.list_to_setp(self.setp, setp_list)
+                        print("New pose = " + str(self.setp))
+                        # send new setpoint
+                        self.con.send(self.setp)
+                        self.watchdog.input_int_register_0 = 1
+
+                    elif not move_completed and state.output_int_register_0 == 0:
+                        print("Move to confirmed pose = " + str(state.target_q))
+                        move_completed = True
+                        self.watchdog.input_int_register_0 = 0
 
     def setp_to_list(sp):
         sp_list = []
@@ -114,12 +120,13 @@ class RTDE_Node(Node):
         # setp1 = [-0.12, -0.43, 0.14, 0, 3.11, 0.04]
         # setp2 = [-0.12, -0.51, 0.21, 0, 3.11, 0.04]
 
-        self.setp.input_double_register_0 = 0
-        self.setp.input_double_register_1 = 0
-        self.setp.input_double_register_2 = 0
-        self.setp.input_double_register_3 = 0
-        self.setp.input_double_register_4 = 0
-        self.setp.input_double_register_5 = 0
+        state = self.con.receive()
+        self.setp.input_double_register_0 = state.actual_TCP_pose[0]
+        self.setp.input_double_register_1 = state.actual_TCP_pose[1]
+        self.setp.input_double_register_2 = state.actual_TCP_pose[2]
+        self.setp.input_double_register_3 = state.actual_TCP_pose[3]
+        self.setp.input_double_register_4 = state.actual_TCP_pose[4]
+        self.setp.input_double_register_5 = state.actual_TCP_pose[5]
 
         # The function "rtde_set_watchdog" in the "rtde_control_loop.urp" creates a 1 Hz watchdog
         self.watchdog.input_int_register_0 = 0
@@ -130,6 +137,7 @@ class RTDE_Node(Node):
             sys.exit()
 
         self.watchdog_thread = threading.Thread(target=self.loop_watchdog, daemon=True)
+        self.running = True
 
     def loop_watch(self):
         while True:
